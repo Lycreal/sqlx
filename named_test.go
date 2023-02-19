@@ -70,6 +70,14 @@ func TestCompileQuery(t *testing.T) {
 			V: []string{"あ", "b", "キコ", "名前"},
 		},
 		{
+			Q: "UPDATE account SET credit=credit--:price;",
+			R: "UPDATE account SET credit=credit--?;",
+			D: "UPDATE account SET credit=credit--$1;",
+			N: "UPDATE account SET credit=credit--:price;",
+			T: "UPDATE account SET credit=credit--@p1;",
+			V: []string{"price"},
+		},
+		{
 			Q: `/* A Block Comment should be ignored for :params */INSERT INTO foo (a,b,c,d) VALUES (:あ, :b, :キコ, :名前)`,
 			R: `/* A Block Comment should be ignored for :params */INSERT INTO foo (a,b,c,d) VALUES (?, ?, ?, ?)`,
 			D: `/* A Block Comment should be ignored for :params */INSERT INTO foo (a,b,c,d) VALUES ($1, $2, $3, $4)`,
@@ -130,24 +138,23 @@ func TestNamedQueryWithoutParams(t *testing.T) {
 		`SELECT array_dims(1 || '[0:1]={2,3}'::int[]);`,
 		// String Constant Syntax
 		`'Dianne'':not_a_parameter horse'`,
-		`'Dianne'''':not_a_parameter horse'`,
+		`'Dianne''\\'':not_a_parameter horse'`,
 		`SELECT ':not_an_parameter'`,
-		`$$Dia:not_an_parameter's horse$$`,
-		`$$Dianne's horse$$`,
-		`SELECT 'foo'
-			'bar';`,
-		`E'user\'s log'`,
+		`$$Dia$:not_an_parameter's horse$$`,
+		`$$Dianne's :horse$$`,
+		`SELECT ':foo'
+			':bar';`,
+		`E'user\'s :log'`,
 		`$$escape ' with ''$$`,
 		// Quoted Ident Syntax
 		`SELECT "addr:city" FROM "location";`,
 		// Type Cast Syntax
 		`select '1'   ::   numeric;`, `select '1'   ::  text :: numeric;`,
-		// Nested Block Quotes
+		// Block Quotes
 		`SELECT * FROM users
 		/* Ignore all things who aren't after a certain :date
-		 * More lines /* nested block comment
-		 */*/
-		WHERE some_text LIKE 'foo -- bar'`,
+		 * More lines */
+		WHERE some_text LIKE ':foo -- :bar'`,
 	}
 
 	for _, q := range queries {
@@ -187,9 +194,8 @@ func (t Test) Errorf(err error, format string, args ...interface{}) {
 }
 
 func TestEscapedColons(t *testing.T) {
-	t.Skip("not sure it is possible to support this in general case without an SQL parser")
 	var qs = `SELECT * FROM testtable WHERE timeposted BETWEEN (now() AT TIME ZONE 'utc') AND
-	(now() AT TIME ZONE 'utc') - interval '01:30:00') AND name = '\'this is a test\'' and id = :id`
+	(now() AT TIME ZONE 'utc') - interval '01:30:00' AND name = '\'this is a test\'' and id = :id`
 	_, _, err := compileNamedQuery([]byte(qs), DOLLAR)
 	if err != nil {
 		t.Error("Didn't handle colons correctly when inside a string")

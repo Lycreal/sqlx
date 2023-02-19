@@ -348,6 +348,8 @@ const (
 	newLine      = '\n'
 	dollarSign   = '$'
 	doubleQuote  = '"'
+	sharp        = '#'
+	space        = ' '
 )
 
 // compile a NamedQuery into an unbound query (using the '?' bindvar) and
@@ -411,20 +413,15 @@ func compileNamedQuery(qs []byte, bindType int) (query string, names []string, e
 				setState(parseStateConsumingIdent, map[string]interface{}{
 					"ident": &strings.Builder{},
 				})
-			} else if currentRune == singleQuote && previousRune != backSlash {
-				// \'
+			} else if currentRune == singleQuote {
+				// '
 				setState(parseStateStringConstant, nil)
-			} else if currentRune == dash && nextRune == dash {
-				// -- single line comment
+			} else if currentRune == sharp || (previousRune == dash && currentRune == dash && nextRune == space) {
+				// # or -- single line comment
 				setState(parseStateLineComment, nil)
 			} else if currentRune == forwardSlash && nextRune == star {
 				// /*
-				setState(parseStateSkipThenTransition, map[string]interface{}{
-					"state": parseStateBlockComment,
-					"data": map[string]interface{}{
-						"depth": 1,
-					},
-				})
+				setState(parseStateBlockComment, nil)
 			} else if currentRune == dollarSign && previousRune == dollarSign {
 				// $$
 				setState(parseStateDollarQuoteLiteral, nil)
@@ -442,23 +439,24 @@ func compileNamedQuery(qs []byte, bindType int) (query string, names []string, e
 			}
 		case parseStateBlockComment:
 			if previousRune == star && currentRune == forwardSlash {
-				newDepth := ctx.data["depth"].(int) - 1
-				if newDepth == 0 {
-					setState(parseStateQuery, nil)
-				} else {
-					ctx.data["depth"] = newDepth
-				}
+				setState(parseStateQuery, nil)
 			}
 		case parseStateLineComment:
 			if currentRune == newLine {
 				setState(parseStateQuery, nil)
 			}
 		case parseStateStringConstant:
-			if currentRune == singleQuote && previousRune != backSlash {
+			if currentRune == backSlash || (currentRune == singleQuote && nextRune == singleQuote) {
+				// \' or ''
+				setState(parseStateSkipThenTransition, map[string]interface{}{
+					"state": parseStateStringConstant,
+					"data":  map[string]interface{}(nil),
+				})
+			} else if currentRune == singleQuote {
 				setState(parseStateQuery, nil)
 			}
 		case parseStateDollarQuoteLiteral:
-			if currentRune == dollarSign && previousRune != dollarSign {
+			if currentRune == dollarSign && previousRune == dollarSign {
 				setState(parseStateQuery, nil)
 			}
 		case parseStateQuotedIdent:
